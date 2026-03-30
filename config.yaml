@@ -1,0 +1,26 @@
+# whisper.cpp настройки
+whisper_cli: "~/dyak/whisper.cpp/build/bin/whisper-cli"
+model_path: "~/dyak/whisper.cpp/models/ggml-large-v2.bin"
+whisper_args:
+  language: "ru"
+  threads: 8
+  beam_size: 5
+  best_of: 5
+  temperature: 0.0
+  max_len: 1
+  no_timestamps: true
+
+# Ollama настройки
+ollama:
+  url: "http://localhost:11434/api/generate"
+  model: "gpt-oss:120b-cloud"     # или другая модель
+  reasoning_effort: "high"         # low | medium | high (опционально)
+  prompt_template: "~/dyak/transcribe-pipeline/prompts/meeting_summary.txt"
+
+# Файловые пути
+output_dir: "/tmp/transcribe_temp"   # временные файлы WAV и транскрипта
+notes_dir: "~/dyak/notes/10-meeting" # куда вставлять результат
+placeholder: "{{input}}"              # что заменять в целевом файле
+
+# Логирование
+log_level: "INFO"   # DEBUG, INFO, WARNING, ERROR
