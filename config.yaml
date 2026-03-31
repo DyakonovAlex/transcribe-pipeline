@@ -13,7 +13,7 @@ whisper_args:
 # Ollama настройки
 ollama:
   url: "http://localhost:11434/api/generate"
-  model: "gpt-oss:120b-cloud"     # или другая модель
+  model: "deepseek-v3.1:671b-cloud"     # или другая модель
   reasoning_effort: "high"         # low | medium | high (опционально)
   prompt_template: "~/dyak/transcribe-pipeline/prompts/meeting_summary.txt"
 

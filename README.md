@@ -6,10 +6,10 @@
 
 1. Проверить и при необходимости поправить пути в `config.yaml`.
 
-2. Сделать скрипт запуска исполняемым:
+2. Сделать скрипты запуска исполняемыми:
 
 ```bash
-chmod +x run_transcribe.sh
+chmod +x run_transcribe.sh run_debug_compare.sh
 ```
 
 3. Запустить (единственный аргумент — путь к аудио):
@@ -56,3 +56,74 @@ ollama:
 - если модель/сервер не поддерживает `reasoning_effort` и возвращает `HTTP 400`,
   скрипт автоматически повторяет запрос **без** этого поля;
 - в логах при этом будет предупреждение, после чего пайплайн продолжит работу.
+
+## Отладочный режим пайплайна
+
+В `scripts/transcribe_meeting.py` доступны этапы:
+- `convert`
+- `transcribe`
+- `ollama`
+- `update`
+
+### Через `run_debug_compare.sh` (рекомендуется)
+
+Скрипт поднимает `venv`, ставит зависимости и вызывает Python с типичными флагами для отладки.
+
+- По умолчанию: `--cleanup never`, фиксированный `--temp-dir` (если не задан: `/tmp/transcribe_debug_<имя_файла_без_расширения>`).
+- Сравнение моделей Ollama за один полный прогон (конвертация → транскрибация → оба запроса к Ollama):
+
+```bash
+./run_debug_compare.sh --compare-ollama "gpt-oss:20b,gpt-oss:120b-cloud" "/путь/к/встрече.m4a"
+```
+
+- Только этап Ollama+update, если WAV и транскрипт уже лежат в том же `--temp-dir` после предыдущего запуска:
+
+```bash
+./run_debug_compare.sh --start-stage ollama --end-stage update \
+  --temp-dir "/tmp/transcribe_debug_моя_встреча" \
+  --compare-ollama "model-a,model-b" \
+  "/путь/к/той_же_встрече.m4a"
+```
+
+- Сравнение двух бинарников `whisper-cli` (этап до `transcribe`):
+
+```bash
+./run_debug_compare.sh --end-stage transcribe \
+  --compare-whisper "/path/whisper-a,/path/whisper-b" \
+  "/путь/к/встрече.m4a"
+```
+
+- Всё, что после `--`, передаётся в `transcribe_meeting.py` без изменений (например `--no-ollama` или свой `--config`):
+
+```bash
+./run_debug_compare.sh "/путь/к/встрече.m4a" -- --no-ollama
+```
+
+Справка по опциям: `./run_debug_compare.sh --help`.
+
+Для сравнения моделей при наличии плейсхолдера в заметке создаются файлы рядом с основным: `<meeting>__<model>.md`. Если плейсхолдер уже заполнен, саммари пишутся в `--temp-dir` как `<meeting>__<model>.summary.md`.
+
+### Вручную через Python
+
+Запуск диапазона этапов:
+
+```bash
+python scripts/transcribe_meeting.py "/путь/к/встрече.m4a" --start-stage transcribe --end-stage ollama --temp-dir "/tmp/my-debug-run"
+```
+
+Сравнение `whisper-cli` на одном и том же этапе `transcribe`:
+
+```bash
+python scripts/transcribe_meeting.py "/путь/к/встрече.m4a" --end-stage transcribe --temp-dir "/tmp/my-debug-run" --compare-whisper-cli "/path/whisper-a,/path/whisper-b"
+```
+
+Сравнение моделей Ollama:
+
+```bash
+python scripts/transcribe_meeting.py "/путь/к/встрече.m4a" --start-stage ollama --end-stage update --temp-dir "/tmp/my-debug-run" --compare-ollama-model "gpt-oss:20b,gpt-oss:120b-cloud"
+```
+
+Режим очистки временных файлов:
+- `--cleanup always` (по умолчанию в обычном запуске без `--temp-dir`),
+- `--cleanup on-success`,
+- `--cleanup never` (по умолчанию в `run_debug_compare.sh`, пока не переопределите `--cleanup`).

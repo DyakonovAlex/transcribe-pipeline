@@ -186,7 +186,7 @@ class PromptTests(unittest.TestCase):
 
         captured_payloads = []
 
-        def _post_side_effect(*args, **kwargs):
+        def _post_side_effect(*_, **kwargs):
             captured_payloads.append(dict(kwargs["json"]))
             if len(captured_payloads) == 1:
                 return _Resp400()
@@ -205,6 +205,22 @@ class PromptTests(unittest.TestCase):
         second_payload = captured_payloads[1]
         self.assertEqual(first_payload.get("reasoning_effort"), "high")
         self.assertNotIn("reasoning_effort", second_payload)
+
+
+class PipelineUtilityTests(unittest.TestCase):
+    def test_parse_csv_arg(self):
+        value = " one, two ,,three "
+        self.assertEqual(transcribe_meeting.parse_csv_arg(value), ["one", "two", "three"])
+
+    def test_should_run_stage_range(self):
+        self.assertTrue(transcribe_meeting.should_run_stage("transcribe", "convert", "ollama"))
+        self.assertFalse(transcribe_meeting.should_run_stage("update", "convert", "ollama"))
+
+    def test_make_safe_suffix(self):
+        self.assertEqual(
+            transcribe_meeting.make_safe_suffix("gpt/oss:120b cloud"),
+            "gpt_oss_120b_cloud",
+        )
 
 
 if __name__ == "__main__":
