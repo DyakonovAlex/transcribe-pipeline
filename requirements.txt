@@ -1,3 +1,4 @@
 pyyaml>=6.0
 requests>=2.31
 colorama>=0.4.6
+pytest>=9.0

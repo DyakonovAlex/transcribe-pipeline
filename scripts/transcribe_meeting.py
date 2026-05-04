@@ -275,6 +275,16 @@ def update_markdown(markdown_path, new_content, placeholder, logger):
     logger.info(f"Файл {markdown_path} обновлён.")
 
 
+def save_transcript_output(transcript, base_name, notes_dir, logger):
+    """Сохраняет сырой транскрипт в постоянный файл для режима --no-ollama."""
+    notes_dir.mkdir(parents=True, exist_ok=True)
+    transcript_path = notes_dir / f"{base_name}.transcript.txt"
+    with open(transcript_path, 'w', encoding='utf-8') as f:
+        f.write(transcript)
+    logger.info(f"Транскрипт сохранён: {transcript_path}")
+    return transcript_path
+
+
 def main():
     parser = argparse.ArgumentParser(description="Транскрибация встречи и вставка в markdown")
     parser.add_argument('input_audio', help="Путь к исходному аудиофайлу (m4a, mp4, и т.д.)")
@@ -373,6 +383,8 @@ def main():
             transcript = read_transcript(str(wav_path))
 
         logger.info(f"Транскрипт получен (длина: {len(transcript)} символов)")
+        if args.no_ollama:
+            save_transcript_output(transcript, base_name, notes_dir, logger)
 
         processed_outputs = {}
         if should_run_stage('ollama', args.start_stage, args.end_stage):

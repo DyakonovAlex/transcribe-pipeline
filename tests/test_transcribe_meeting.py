@@ -222,6 +222,23 @@ class PipelineUtilityTests(unittest.TestCase):
             "gpt_oss_120b_cloud",
         )
 
+    def test_save_transcript_output_creates_accessible_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            notes_dir = Path(tmp) / "notes"
+            logger = transcribe_meeting.setup_logging()
+            transcript = "raw transcript text"
+
+            result_path = transcribe_meeting.save_transcript_output(
+                transcript=transcript,
+                base_name="meeting-1",
+                notes_dir=notes_dir,
+                logger=logger,
+            )
+
+            self.assertTrue(result_path.exists())
+            self.assertEqual(result_path.name, "meeting-1.transcript.txt")
+            self.assertEqual(result_path.read_text(encoding="utf-8"), transcript)
+
 
 if __name__ == "__main__":
     unittest.main()
