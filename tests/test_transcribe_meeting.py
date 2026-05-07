@@ -1,4 +1,5 @@
 import importlib.util
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -58,14 +59,14 @@ class ValidateConfigTests(unittest.TestCase):
 
     def test_validate_config_ok_without_ollama(self):
         config = self._base_config()
-        transcribe_meeting.validate_config(config, require_ollama=False)
+        transcribe_meeting.validate_config(config, require_llm=False)
 
     def test_validate_config_missing_root_key(self):
         config = self._base_config()
         del config["model_path"]
 
         with self.assertRaises(SystemExit) as ctx:
-            transcribe_meeting.validate_config(config, require_ollama=False)
+            transcribe_meeting.validate_config(config, require_llm=False)
 
         self.assertIn("model_path", str(ctx.exception))
 
@@ -74,7 +75,7 @@ class ValidateConfigTests(unittest.TestCase):
         del config["whisper_args"]["beam_size"]
 
         with self.assertRaises(SystemExit) as ctx:
-            transcribe_meeting.validate_config(config, require_ollama=False)
+            transcribe_meeting.validate_config(config, require_llm=False)
 
         self.assertIn("whisper_args.beam_size", str(ctx.exception))
 
@@ -83,7 +84,7 @@ class ValidateConfigTests(unittest.TestCase):
         config["whisper_cli"] = str(self.tmp_path / "missing-whisper-cli")
 
         with self.assertRaises(SystemExit) as ctx:
-            transcribe_meeting.validate_config(config, require_ollama=False)
+            transcribe_meeting.validate_config(config, require_llm=False)
 
         self.assertIn("whisper_cli", str(ctx.exception))
 
@@ -92,9 +93,22 @@ class ValidateConfigTests(unittest.TestCase):
         del config["ollama"]["prompt_template"]
 
         with self.assertRaises(SystemExit) as ctx:
-            transcribe_meeting.validate_config(config, require_ollama=True)
+            transcribe_meeting.validate_config(config, require_llm=True, llm_provider="ollama")
 
         self.assertIn("ollama.prompt_template", str(ctx.exception))
+
+    def test_validate_config_requires_gemini_cli_keys(self):
+        config = self._base_config()
+        config["llm_provider"] = "gemini_cli"
+        config["gemini_cli"] = {
+            "binary": "gemini",
+            "model": "gemini-2.5-pro",
+        }
+
+        with self.assertRaises(SystemExit) as ctx:
+            transcribe_meeting.validate_config(config, require_llm=True, llm_provider="gemini_cli")
+
+        self.assertIn("gemini_cli.prompt_template", str(ctx.exception))
 
 
 class PromptTests(unittest.TestCase):
@@ -115,12 +129,114 @@ class PromptTests(unittest.TestCase):
             transcript = "TEST TRANSCRIPT"
 
             with patch.object(transcribe_meeting, "call_ollama", return_value="ok") as mocked:
-                result = transcribe_meeting.postprocess_with_ollama(transcript, config, logger)
+                result = transcribe_meeting.postprocess_with_provider(
+                    transcript,
+                    config,
+                    logger,
+                    llm_provider="ollama",
+                )
 
             self.assertEqual(result, "ok")
             sent_prompt = mocked.call_args[0][0]
             self.assertIn("TEST TRANSCRIPT", sent_prompt)
             self.assertNotIn("{{transcription}}", sent_prompt)
+
+    def test_postprocess_with_provider_routes_to_ollama(self):
+        config = {
+            "ollama": {
+                "model": "test-model",
+                "url": "http://localhost:11434/api/generate",
+                "prompt_template": "/tmp/prompt.txt",
+            }
+        }
+        logger = transcribe_meeting.setup_logging()
+
+        with patch.object(transcribe_meeting, "build_prompt", return_value="prompt") as mocked_prompt:
+            with patch.object(transcribe_meeting, "call_ollama", return_value="ok") as mocked_ollama:
+                result = transcribe_meeting.postprocess_with_provider(
+                    "transcript",
+                    config,
+                    logger,
+                    llm_provider="ollama",
+                )
+
+        self.assertEqual(result, "ok")
+        mocked_prompt.assert_called_once()
+        mocked_ollama.assert_called_once()
+
+    def test_postprocess_with_provider_routes_to_gemini_cli(self):
+        config = {
+            "gemini_cli": {
+                "binary": "gemini",
+                "model": "gemini-2.5-pro",
+                "prompt_template": "/tmp/prompt.txt",
+            }
+        }
+        logger = transcribe_meeting.setup_logging()
+
+        with patch.object(transcribe_meeting, "build_prompt", return_value="prompt") as mocked_prompt:
+            with patch.object(transcribe_meeting, "call_gemini_cli", return_value="ok") as mocked_gemini:
+                result = transcribe_meeting.postprocess_with_provider(
+                    "transcript",
+                    config,
+                    logger,
+                    llm_provider="gemini_cli",
+                )
+
+        self.assertEqual(result, "ok")
+        mocked_prompt.assert_called_once()
+        mocked_gemini.assert_called_once()
+
+    def test_call_gemini_cli_raises_on_subprocess_error(self):
+        config = {
+            "gemini_cli": {
+                "binary": "gemini",
+                "model": "gemini-2.5-pro",
+                "prompt_template": "/tmp/prompt.txt",
+            }
+        }
+        logger = transcribe_meeting.setup_logging()
+        err = subprocess.CalledProcessError(
+            returncode=1, cmd=["gemini"], stderr="boom"
+        )
+        with patch.object(transcribe_meeting.subprocess, "run", side_effect=err):
+            with self.assertRaises(subprocess.CalledProcessError):
+                transcribe_meeting.call_gemini_cli("prompt", config, logger)
+
+    def test_call_gemini_cli_handles_empty_stdout(self):
+        config = {
+            "gemini_cli": {
+                "binary": "gemini",
+                "model": "gemini-2.5-pro",
+                "prompt_template": "/tmp/prompt.txt",
+            }
+        }
+        logger = transcribe_meeting.setup_logging()
+
+        class _Resp:
+            stdout = "   "
+
+        with patch.object(transcribe_meeting.subprocess, "run", return_value=_Resp()):
+            result = transcribe_meeting.call_gemini_cli("prompt", config, logger)
+
+        self.assertEqual(result, "")
+
+    def test_smoke_check_gemini_cli_fails_when_binary_missing(self):
+        config = {"gemini_cli": {"binary": "gemini"}}
+        logger = transcribe_meeting.setup_logging()
+
+        with patch.object(transcribe_meeting.shutil, "which", return_value=None):
+            with self.assertRaises(SystemExit) as ctx:
+                transcribe_meeting.smoke_check_gemini_cli(config, logger)
+
+        self.assertIn("Gemini CLI не найден", str(ctx.exception))
+
+    def test_smoke_check_gemini_cli_passes_when_binary_found(self):
+        config = {"gemini_cli": {"binary": "gemini"}}
+        logger = transcribe_meeting.setup_logging()
+
+        with patch.object(transcribe_meeting.shutil, "which", return_value="/usr/local/bin/gemini"):
+            transcribe_meeting.smoke_check_gemini_cli(config, logger)
 
     def test_call_ollama_sends_reasoning_effort_when_configured(self):
         config = {
@@ -213,8 +329,8 @@ class PipelineUtilityTests(unittest.TestCase):
         self.assertEqual(transcribe_meeting.parse_csv_arg(value), ["one", "two", "three"])
 
     def test_should_run_stage_range(self):
-        self.assertTrue(transcribe_meeting.should_run_stage("transcribe", "convert", "ollama"))
-        self.assertFalse(transcribe_meeting.should_run_stage("update", "convert", "ollama"))
+        self.assertTrue(transcribe_meeting.should_run_stage("transcribe", "convert", "llm"))
+        self.assertFalse(transcribe_meeting.should_run_stage("update", "convert", "llm"))
 
     def test_make_safe_suffix(self):
         self.assertEqual(

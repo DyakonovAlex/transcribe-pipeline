@@ -10,12 +10,23 @@ whisper_args:
   max_len: 1
   no_timestamps: true
 
+# Выбор LLM-провайдера пост-обработки: ollama | gemini_cli
+llm_provider: "gemini_cli"
+
 # Ollama настройки
 ollama:
   url: "http://localhost:11434/api/generate"
   model: "mistral-nemo"     # или другая модель
   reasoning_effort: "high"         # low | medium | high (опционально)
   prompt_template: "~/dyak/transcribe-pipeline/prompts/meeting_summary.txt"
+
+# Gemini CLI настройки (используются, когда llm_provider: gemini_cli)
+gemini_cli:
+  binary: "gemini"
+  model: "gemini-3-flash-preview"
+  prompt_template: "~/dyak/transcribe-pipeline/prompts/meeting_summary.txt"
+  timeout: 300
+  args: []
 
 # Файловые пути
 output_dir: "/tmp/transcribe_temp"   # временные файлы WAV и транскрипта

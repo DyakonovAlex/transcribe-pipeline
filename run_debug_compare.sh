@@ -13,7 +13,7 @@ Options:
   --temp-dir DIR              Каталог для WAV/транскрипта (по умолчанию: /tmp/transcribe_debug_<stem>)
   --compare-ollama CSV        Список моделей через запятую (передаётся как --compare-ollama-model)
   --compare-whisper CSV       Список путей whisper-cli через запятую (--compare-whisper-cli)
-  --start-stage STAGE         convert | transcribe | ollama | update (по умолчанию: convert)
+  --start-stage STAGE         convert | transcribe | llm | update (по умолчанию: convert)
   --end-stage STAGE           (по умолчанию: update)
   --cleanup MODE              always | on-success | never (по умолчанию: never)
   --config PATH               Путь к config.yaml (по умолчанию: config.yaml в корне проекта)
@@ -21,7 +21,7 @@ Options:
 
 Examples:
   ./run_debug_compare.sh --compare-ollama "model-a,model-b" "/path/to/meeting.m4a"
-  ./run_debug_compare.sh --start-stage ollama --end-stage update \\
+  ./run_debug_compare.sh --start-stage llm --end-stage update \\
     --temp-dir /tmp/my-debug --compare-ollama "model-a,model-b" "/path/to/meeting.m4a"
 EOF
 }

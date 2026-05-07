@@ -1,6 +1,6 @@
 # transcribe-pipeline
 
-Минимальный пайплайн для транскрибации встречи через `whisper.cpp` и (опционально) пост-обработки через Ollama.
+Минимальный пайплайн для транскрибации встречи через `whisper.cpp` и (опционально) пост-обработки через LLM (`Ollama` или `Gemini CLI`).
 
 ## Быстрый запуск
 
@@ -34,13 +34,21 @@ python -m pip install -r requirements.txt
 python scripts/transcribe_meeting.py "/путь/к/встрече.m4a"
 ```
 
-Если нужно только получить транскрипт без Ollama:
+Если нужно только получить транскрипт без LLM-постобработки:
 
 ```bash
-python scripts/transcribe_meeting.py "/путь/к/встрече.m4a" --no-ollama
+python scripts/transcribe_meeting.py "/путь/к/встрече.m4a" --no-llm
 ```
 
-## Настройки Ollama
+## Настройки LLM
+
+Выбор провайдера в `config.yaml`:
+
+```yaml
+llm_provider: "ollama" # ollama | gemini_cli
+```
+
+### Ollama
 
 В `config.yaml` можно задать уровень "thinking":
 
@@ -57,12 +65,25 @@ ollama:
   скрипт автоматически повторяет запрос **без** этого поля;
 - в логах при этом будет предупреждение, после чего пайплайн продолжит работу.
 
+### Gemini CLI
+
+```yaml
+gemini_cli:
+  binary: "gemini"
+  model: "gemini-2.5-pro"
+  prompt_template: "~/dyak/transcribe-pipeline/prompts/meeting_summary.txt"
+  timeout: 300
+  args: []
+```
+
+`args` — дополнительные аргументы для `gemini` CLI (опционально).
+
 ## Отладочный режим пайплайна
 
 В `scripts/transcribe_meeting.py` доступны этапы:
 - `convert`
 - `transcribe`
-- `ollama`
+- `llm`
 - `update`
 
 ### Через `run_debug_compare.sh` (рекомендуется)
@@ -79,7 +100,7 @@ ollama:
 - Только этап Ollama+update, если WAV и транскрипт уже лежат в том же `--temp-dir` после предыдущего запуска:
 
 ```bash
-./run_debug_compare.sh --start-stage ollama --end-stage update \
+./run_debug_compare.sh --start-stage llm --end-stage update \
   --temp-dir "/tmp/transcribe_debug_моя_встреча" \
   --compare-ollama "model-a,model-b" \
   "/путь/к/той_же_встрече.m4a"
@@ -93,10 +114,10 @@ ollama:
   "/путь/к/встрече.m4a"
 ```
 
-- Всё, что после `--`, передаётся в `transcribe_meeting.py` без изменений (например `--no-ollama` или свой `--config`):
+- Всё, что после `--`, передаётся в `transcribe_meeting.py` без изменений (например `--no-llm` или свой `--config`):
 
 ```bash
-./run_debug_compare.sh "/путь/к/встрече.m4a" -- --no-ollama
+./run_debug_compare.sh "/путь/к/встрече.m4a" -- --no-llm
 ```
 
 Справка по опциям: `./run_debug_compare.sh --help`.
@@ -108,7 +129,7 @@ ollama:
 Запуск диапазона этапов:
 
 ```bash
-python scripts/transcribe_meeting.py "/путь/к/встрече.m4a" --start-stage transcribe --end-stage ollama --temp-dir "/tmp/my-debug-run"
+python scripts/transcribe_meeting.py "/путь/к/встрече.m4a" --start-stage transcribe --end-stage llm --temp-dir "/tmp/my-debug-run"
 ```
 
 Сравнение `whisper-cli` на одном и том же этапе `transcribe`:
@@ -120,8 +141,10 @@ python scripts/transcribe_meeting.py "/путь/к/встрече.m4a" --end-sta
 Сравнение моделей Ollama:
 
 ```bash
-python scripts/transcribe_meeting.py "/путь/к/встрече.m4a" --start-stage ollama --end-stage update --temp-dir "/tmp/my-debug-run" --compare-ollama-model "gpt-oss:20b,gpt-oss:120b-cloud"
+python scripts/transcribe_meeting.py "/путь/к/встрече.m4a" --start-stage llm --end-stage update --temp-dir "/tmp/my-debug-run" --compare-ollama-model "gpt-oss:20b,gpt-oss:120b-cloud"
 ```
+
+`--compare-ollama-model` работает только при `llm_provider: ollama`.
 
 Режим очистки временных файлов:
 - `--cleanup always` (по умолчанию в обычном запуске без `--temp-dir`),

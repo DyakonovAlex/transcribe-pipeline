@@ -2,16 +2,16 @@
 set -euo pipefail
 
 usage() {
-  echo "Usage: $(basename "$0") [--no-ollama] /path/to/meeting.m4a" >&2
+  echo "Usage: $(basename "$0") [--no-llm] /path/to/meeting.m4a" >&2
 }
 
-NO_OLLAMA=0
+NO_LLM=0
 INPUT_AUDIO=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --no-ollama)
-      NO_OLLAMA=1
+    --no-llm)
+      NO_LLM=1
       shift
       ;;
     --help|-h)
@@ -65,8 +65,8 @@ echo "Installing Python dependencies ..." >&2
 
 echo "Running transcription pipeline ..." >&2
 PYTHON_ARGS=(scripts/transcribe_meeting.py "$INPUT_AUDIO")
-if [[ "$NO_OLLAMA" -eq 1 ]]; then
-  PYTHON_ARGS+=(--no-ollama)
+if [[ "$NO_LLM" -eq 1 ]]; then
+  PYTHON_ARGS+=(--no-llm)
 fi
 exec ./venv/bin/python "${PYTHON_ARGS[@]}"
 

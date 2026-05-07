@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Автоматическая транскрибация встречи и пост-обработка через Ollama.
-Использование: python3 transcribe_meeting.py /путь/к/аудио.m4a [--no-ollama]
+Автоматическая транскрибация встречи и пост-обработка через LLM-провайдер.
+Использование: python3 transcribe_meeting.py /путь/к/аудио.m4a [--no-llm]
 """
 
 import argparse
@@ -21,7 +21,7 @@ from colorama import Fore, Style, init
 # Инициализация colorama для Windows (если нужно)
 init(autoreset=True)
 
-STAGES = ['convert', 'transcribe', 'ollama', 'update']
+STAGES = ['convert', 'transcribe', 'llm', 'update']
 
 
 class ColoredFormatter(logging.Formatter):
@@ -60,10 +60,15 @@ def load_config(config_path):
             config[key] = os.path.expanduser(config[key])
     if 'ollama' in config and 'prompt_template' in config['ollama']:
         config['ollama']['prompt_template'] = os.path.expanduser(config['ollama']['prompt_template'])
+    if 'gemini_cli' in config:
+        if 'prompt_template' in config['gemini_cli']:
+            config['gemini_cli']['prompt_template'] = os.path.expanduser(config['gemini_cli']['prompt_template'])
+        if 'binary' in config['gemini_cli']:
+            config['gemini_cli']['binary'] = os.path.expanduser(config['gemini_cli']['binary'])
     return config
 
 
-def validate_config(config, require_ollama: bool) -> None:
+def validate_config(config, require_llm: bool, llm_provider: str = 'ollama') -> None:
     """Проверяет наличие обязательных ключей и валидность путей в конфигурации."""
     missing = []
     errors = []
@@ -82,13 +87,23 @@ def validate_config(config, require_ollama: bool) -> None:
                 if key not in config['whisper_args']:
                     missing.append(f"whisper_args.{key}")
 
-    if require_ollama:
-        if 'ollama' not in config:
-            missing.append('ollama')
+    if require_llm:
+        if llm_provider == 'ollama':
+            if 'ollama' not in config:
+                missing.append('ollama')
+            else:
+                for sub in ['url', 'model', 'prompt_template']:
+                    if sub not in config['ollama']:
+                        missing.append(f"ollama.{sub}")
+        elif llm_provider == 'gemini_cli':
+            if 'gemini_cli' not in config:
+                missing.append('gemini_cli')
+            else:
+                for sub in ['binary', 'model', 'prompt_template']:
+                    if sub not in config['gemini_cli']:
+                        missing.append(f"gemini_cli.{sub}")
         else:
-            for sub in ['url', 'model', 'prompt_template']:
-                if sub not in config['ollama']:
-                    missing.append(f"ollama.{sub}")
+            errors.append(f"Неподдерживаемый llm_provider: {llm_provider}")
 
     if missing:
         missing_str = ', '.join(missing)
@@ -120,7 +135,7 @@ def validate_config(config, require_ollama: bool) -> None:
     if not isinstance(placeholder, str) or not placeholder.strip():
         errors.append("placeholder должен быть непустой строкой")
 
-    if require_ollama:
+    if require_llm and llm_provider == 'ollama':
         prompt_template = Path(config['ollama']['prompt_template']).expanduser()
         if not prompt_template.exists() or not prompt_template.is_file():
             errors.append(f"Файл ollama.prompt_template не найден: {prompt_template}")
@@ -132,6 +147,22 @@ def validate_config(config, require_ollama: bool) -> None:
                 errors.append(
                     f"ollama.reasoning_effort должен быть одним из: {', '.join(sorted(allowed))}"
                 )
+
+    if require_llm and llm_provider == 'gemini_cli':
+        prompt_template = Path(config['gemini_cli']['prompt_template']).expanduser()
+        if not prompt_template.exists() or not prompt_template.is_file():
+            errors.append(f"Файл gemini_cli.prompt_template не найден: {prompt_template}")
+
+        gemini_binary = config['gemini_cli']['binary']
+        if not isinstance(gemini_binary, str) or not gemini_binary.strip():
+            errors.append("gemini_cli.binary должен быть непустой строкой")
+
+        model = config['gemini_cli']['model']
+        if not isinstance(model, str) or not model.strip():
+            errors.append("gemini_cli.model должен быть непустой строкой")
+
+        if 'args' in config['gemini_cli'] and not isinstance(config['gemini_cli']['args'], list):
+            errors.append("gemini_cli.args должен быть списком аргументов")
 
     if errors:
         raise SystemExit('\n'.join(errors))
@@ -247,13 +278,75 @@ def call_ollama(prompt_text, config, logger, model_override=None):
         raise
 
 
-def postprocess_with_ollama(transcript, config, logger, model_override=None):
-    """Загружает шаблон, заменяет {{transcription}}, вызывает Ollama."""
-    prompt_template_path = config['ollama']['prompt_template']
+def build_prompt(transcript, prompt_template_path):
+    """Загружает шаблон промпта и подставляет транскрипт."""
     with open(prompt_template_path, 'r', encoding='utf-8') as f:
         template = f.read()
-    full_prompt = template.replace('{{transcription}}', transcript)
-    return call_ollama(full_prompt, config, logger, model_override=model_override)
+    return template.replace('{{transcription}}', transcript)
+
+
+def call_gemini_cli(prompt_text, config, logger, model_override=None):
+    """Запускает Gemini CLI и возвращает текст ответа из stdout."""
+    gemini_cfg = config['gemini_cli']
+    binary = gemini_cfg['binary']
+    model = model_override or gemini_cfg['model']
+    timeout = int(gemini_cfg.get('timeout', 300))
+    extra_args = gemini_cfg.get('args', [])
+    cmd = [binary, '--model', model, *extra_args]
+
+    logger.info(f"Отправка запроса к Gemini CLI (модель {model})...")
+    try:
+        result = subprocess.run(
+            cmd,
+            input=prompt_text,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=timeout,
+        )
+    except FileNotFoundError:
+        logger.error(f"Gemini CLI не найден: {binary}")
+        raise
+    except subprocess.TimeoutExpired:
+        logger.error(f"Gemini CLI превысил timeout={timeout} сек")
+        raise
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Gemini CLI завершился с ошибкой: {e}")
+        if e.stderr:
+            logger.error(f"stderr: {e.stderr}")
+        raise
+
+    response = result.stdout.strip()
+    if not response:
+        logger.warning("Gemini CLI вернул пустой ответ")
+    else:
+        logger.info("Gemini CLI обработал запрос")
+    return response
+
+
+def smoke_check_gemini_cli(config, logger):
+    """Проверяет, что бинарник Gemini CLI доступен до длинных этапов пайплайна."""
+    binary = config['gemini_cli']['binary']
+    resolved = shutil.which(binary)
+    if resolved is None:
+        raise SystemExit(
+            f"Gemini CLI не найден: {binary}. "
+            "Установите CLI или укажите корректный gemini_cli.binary в config.yaml."
+        )
+    logger.info(f"Gemini CLI найден: {resolved}")
+
+
+def postprocess_with_provider(transcript, config, logger, llm_provider, model_override=None):
+    """Загружает шаблон, формирует prompt и вызывает выбранный провайдер."""
+    if llm_provider == 'ollama':
+        prompt_template_path = config['ollama']['prompt_template']
+        full_prompt = build_prompt(transcript, prompt_template_path)
+        return call_ollama(full_prompt, config, logger, model_override=model_override)
+    if llm_provider == 'gemini_cli':
+        prompt_template_path = config['gemini_cli']['prompt_template']
+        full_prompt = build_prompt(transcript, prompt_template_path)
+        return call_gemini_cli(full_prompt, config, logger, model_override=model_override)
+    raise SystemExit(f"Неподдерживаемый llm_provider: {llm_provider}")
 
 
 def update_markdown(markdown_path, new_content, placeholder, logger):
@@ -276,7 +369,7 @@ def update_markdown(markdown_path, new_content, placeholder, logger):
 
 
 def save_transcript_output(transcript, base_name, notes_dir, logger):
-    """Сохраняет сырой транскрипт в постоянный файл для режима --no-ollama."""
+    """Сохраняет сырой транскрипт в постоянный файл для режима --no-llm."""
     notes_dir.mkdir(parents=True, exist_ok=True)
     transcript_path = notes_dir / f"{base_name}.transcript.txt"
     with open(transcript_path, 'w', encoding='utf-8') as f:
@@ -288,7 +381,8 @@ def save_transcript_output(transcript, base_name, notes_dir, logger):
 def main():
     parser = argparse.ArgumentParser(description="Транскрибация встречи и вставка в markdown")
     parser.add_argument('input_audio', help="Путь к исходному аудиофайлу (m4a, mp4, и т.д.)")
-    parser.add_argument('--no-ollama', action='store_true', help="Пропустить пост-обработку и вставку")
+    parser.add_argument('--no-llm', action='store_true', help="Пропустить пост-обработку и вставку")
+    parser.add_argument('--llm-provider', choices=['ollama', 'gemini_cli'], help="Провайдер пост-обработки")
     parser.add_argument('--config', default='config.yaml', help="Путь к конфигурационному файлу")
     parser.add_argument('--start-stage', choices=STAGES, default='convert', help="Начальный этап пайплайна")
     parser.add_argument('--end-stage', choices=STAGES, default='update', help="Конечный этап пайплайна")
@@ -305,7 +399,7 @@ def main():
     )
     parser.add_argument(
         '--compare-ollama-model',
-        help="CSV список моделей Ollama для сравнения на этапе ollama/update"
+        help="CSV список моделей Ollama для сравнения на этапе llm/update"
     )
     args = parser.parse_args()
 
@@ -321,7 +415,18 @@ def main():
     config = load_config(config_path)
     # Логгер и валидация конфига
     logger = setup_logging(level=getattr(logging, config.get('log_level', 'INFO')))
-    validate_config(config, require_ollama=(not args.no_ollama and should_run_stage('ollama', args.start_stage, args.end_stage)))
+    llm_provider = args.llm_provider or config.get('llm_provider', 'ollama')
+    validate_config(
+        config,
+        require_llm=(not args.no_llm and should_run_stage('llm', args.start_stage, args.end_stage)),
+        llm_provider=llm_provider,
+    )
+    if (
+        llm_provider == 'gemini_cli' and
+        not args.no_llm and
+        should_run_stage('llm', args.start_stage, args.end_stage)
+    ):
+        smoke_check_gemini_cli(config, logger)
 
     input_file = Path(args.input_audio).expanduser().resolve()
     if not input_file.exists():
@@ -383,24 +488,30 @@ def main():
             transcript = read_transcript(str(wav_path))
 
         logger.info(f"Транскрипт получен (длина: {len(transcript)} символов)")
-        if args.no_ollama:
+        if args.no_llm:
             save_transcript_output(transcript, base_name, notes_dir, logger)
 
         processed_outputs = {}
-        if should_run_stage('ollama', args.start_stage, args.end_stage):
-            if args.no_ollama:
-                logger.info("Пропуск пост-обработки (--no-ollama)")
+        if should_run_stage('llm', args.start_stage, args.end_stage):
+            if args.no_llm:
+                logger.info("Пропуск пост-обработки (--no-llm)")
             else:
-                model_variants = compare_ollama_models or [config['ollama']['model']]
+                if llm_provider == 'gemini_cli' and compare_ollama_models:
+                    raise SystemExit("--compare-ollama-model поддерживается только для llm_provider=ollama")
+                model_variants = (
+                    compare_ollama_models
+                    if llm_provider == 'ollama'
+                    else [config['gemini_cli']['model']]
+                )
                 for idx, model in enumerate(model_variants, start=1):
-                    logger.info(f"Ollama вариант {idx}/{len(model_variants)}: {model}")
-                    processed_outputs[model] = postprocess_with_ollama(
-                        transcript, config, logger, model_override=model
+                    logger.info(f"LLM вариант {idx}/{len(model_variants)} ({llm_provider}): {model}")
+                    processed_outputs[model] = postprocess_with_provider(
+                        transcript, config, logger, llm_provider=llm_provider, model_override=model
                     )
 
         if should_run_stage('update', args.start_stage, args.end_stage):
-            if args.no_ollama:
-                logger.info("Пропуск обновления markdown, т.к. включён --no-ollama")
+            if args.no_llm:
+                logger.info("Пропуск обновления markdown, т.к. включён --no-llm")
             elif not processed_outputs:
                 logger.warning("Нет результатов Ollama для обновления Markdown.")
             elif len(processed_outputs) == 1:
