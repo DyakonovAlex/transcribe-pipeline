@@ -2,10 +2,11 @@
 set -euo pipefail
 
 usage() {
-  echo "Usage: $(basename "$0") [--no-llm] /path/to/meeting.m4a" >&2
+  echo "Usage: $(basename "$0") [--no-llm] [--prompt-template /path/to/prompt.txt] /path/to/meeting.m4a" >&2
 }
 
 NO_LLM=0
+PROMPT_TEMPLATE=""
 INPUT_AUDIO=""
 
 while [[ $# -gt 0 ]]; do
@@ -13,6 +14,15 @@ while [[ $# -gt 0 ]]; do
     --no-llm)
       NO_LLM=1
       shift
+      ;;
+    --prompt-template)
+      if [[ $# -lt 2 ]]; then
+        echo "Error: --prompt-template requires a file path argument." >&2
+        usage
+        exit 2
+      fi
+      PROMPT_TEMPLATE="$2"
+      shift 2
       ;;
     --help|-h)
       usage
@@ -45,6 +55,11 @@ if [[ ! -f "$INPUT_AUDIO" ]]; then
   exit 2
 fi
 
+if [[ -n "$PROMPT_TEMPLATE" && ! -f "$PROMPT_TEMPLATE" ]]; then
+  echo "Error: prompt template file not found: $PROMPT_TEMPLATE" >&2
+  exit 2
+fi
+
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
@@ -67,6 +82,9 @@ echo "Running transcription pipeline ..." >&2
 PYTHON_ARGS=(scripts/transcribe_meeting.py "$INPUT_AUDIO")
 if [[ "$NO_LLM" -eq 1 ]]; then
   PYTHON_ARGS+=(--no-llm)
+fi
+if [[ -n "$PROMPT_TEMPLATE" ]]; then
+  PYTHON_ARGS+=(--prompt-template "$PROMPT_TEMPLATE")
 fi
 exec ./venv/bin/python "${PYTHON_ARGS[@]}"
 

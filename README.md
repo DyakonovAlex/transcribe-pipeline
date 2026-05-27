@@ -12,10 +12,16 @@
 chmod +x run_transcribe.sh run_debug_compare.sh
 ```
 
-3. Запустить (единственный аргумент — путь к аудио):
+3. Запустить (обязательный аргумент — путь к аудио):
 
 ```bash
 ./run_transcribe.sh "/путь/к/встрече.m4a"
+```
+
+Переопределить шаблон промпта на один запуск (без правок `config.yaml`):
+
+```bash
+./run_transcribe.sh --prompt-template "/путь/к/prompts/interview_assessment.txt" "/путь/к/встрече.m4a"
 ```
 
 ## Запуск без bash-обёртки (вручную)
@@ -32,6 +38,12 @@ python -m pip install -r requirements.txt
 
 ```bash
 python scripts/transcribe_meeting.py "/путь/к/встрече.m4a"
+```
+
+Runtime override шаблона промпта:
+
+```bash
+python scripts/transcribe_meeting.py "/путь/к/встрече.m4a" --prompt-template "/путь/к/prompts/interview_assessment.txt"
 ```
 
 Если нужно только получить транскрипт без LLM-постобработки:

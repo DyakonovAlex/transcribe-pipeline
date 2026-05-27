@@ -383,6 +383,10 @@ def main():
     parser.add_argument('input_audio', help="Путь к исходному аудиофайлу (m4a, mp4, и т.д.)")
     parser.add_argument('--no-llm', action='store_true', help="Пропустить пост-обработку и вставку")
     parser.add_argument('--llm-provider', choices=['ollama', 'gemini_cli'], help="Провайдер пост-обработки")
+    parser.add_argument(
+        '--prompt-template',
+        help="Путь к шаблону промпта (runtime override без изменения config.yaml)"
+    )
     parser.add_argument('--config', default='config.yaml', help="Путь к конфигурационному файлу")
     parser.add_argument('--start-stage', choices=STAGES, default='convert', help="Начальный этап пайплайна")
     parser.add_argument('--end-stage', choices=STAGES, default='update', help="Конечный этап пайплайна")
@@ -416,6 +420,17 @@ def main():
     # Логгер и валидация конфига
     logger = setup_logging(level=getattr(logging, config.get('log_level', 'INFO')))
     llm_provider = args.llm_provider or config.get('llm_provider', 'ollama')
+    if args.prompt_template:
+        prompt_template_path = Path(args.prompt_template).expanduser().resolve()
+        if not prompt_template_path.exists() or not prompt_template_path.is_file():
+            raise SystemExit(f"Файл prompt template не найден: {prompt_template_path}")
+        if llm_provider == 'ollama':
+            config.setdefault('ollama', {})
+            config['ollama']['prompt_template'] = str(prompt_template_path)
+        elif llm_provider == 'gemini_cli':
+            config.setdefault('gemini_cli', {})
+            config['gemini_cli']['prompt_template'] = str(prompt_template_path)
+
     validate_config(
         config,
         require_llm=(not args.no_llm and should_run_stage('llm', args.start_stage, args.end_stage)),
