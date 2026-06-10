@@ -16,22 +16,22 @@ llm_provider: "gemini_cli"
 # Ollama настройки
 ollama:
   url: "http://localhost:11434/api/generate"
-  model: "mistral-nemo"     # или другая модель
-  reasoning_effort: "high"         # low | medium | high (опционально)
+  model: "mistral-nemo" # или другая модель
+  reasoning_effort: "high" # low | medium | high (опционально)
   prompt_template: "~/dyak/transcribe-pipeline/prompts/meeting_summary.txt"
 
 # Gemini CLI настройки (используются, когда llm_provider: gemini_cli)
 gemini_cli:
   binary: "gemini"
-  model: "gemini-3-flash-preview"
+  model: "gemini-3.5-flash" # gemini-3-flash-preview
   prompt_template: "~/dyak/transcribe-pipeline/prompts/meeting_summary.txt"
   timeout: 300
   args: []
 
 # Файловые пути
-output_dir: "/tmp/transcribe_temp"   # временные файлы WAV и транскрипта
+output_dir: "/tmp/transcribe_temp" # временные файлы WAV и транскрипта
 notes_dir: "~/dyak/notes/10-meeting" # куда вставлять результат
-placeholder: "{{input}}"              # что заменять в целевом файле
+placeholder: "{{input}}" # что заменять в целевом файле
 
 # Логирование
-log_level: "INFO"   # DEBUG, INFO, WARNING, ERROR
+log_level: "INFO" # DEBUG, INFO, WARNING, ERROR
