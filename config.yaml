@@ -11,19 +11,18 @@ whisper_args:
   no_timestamps: true
 
 # Выбор LLM-провайдера пост-обработки: ollama | gemini_cli
-llm_provider: "gemini_cli"
+llm_provider: "ollama"
 
 # Ollama настройки
 ollama:
   url: "http://localhost:11434/api/generate"
-  model: "mistral-nemo" # или другая модель
-  reasoning_effort: "high" # low | medium | high (опционально)
+  model: "qwen3-coder:480b-cloud"
   prompt_template: "~/dyak/transcribe-pipeline/prompts/meeting_summary.txt"
 
 # Gemini CLI настройки (используются, когда llm_provider: gemini_cli)
 gemini_cli:
   binary: "gemini"
-  model: "gemini-3.5-flash" # gemini-3-flash-preview
+  model: "gemini-3.5-flash" # запасной провайдер при llm_provider: gemini_cli
   prompt_template: "~/dyak/transcribe-pipeline/prompts/meeting_summary.txt"
   timeout: 300
   args: []

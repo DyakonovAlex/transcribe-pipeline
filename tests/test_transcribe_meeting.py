@@ -338,6 +338,38 @@ class PipelineUtilityTests(unittest.TestCase):
             "gpt_oss_120b_cloud",
         )
 
+    def test_resolve_llm_model_variants_uses_ollama_config_by_default(self):
+        config = {
+            "ollama": {"model": "qwen3-coder:480b-cloud"},
+            "gemini_cli": {"model": "gemini-3.5-flash"},
+        }
+        self.assertEqual(
+            transcribe_meeting.resolve_llm_model_variants("ollama", config, []),
+            ["qwen3-coder:480b-cloud"],
+        )
+
+    def test_resolve_llm_model_variants_uses_compare_list_for_ollama(self):
+        config = {
+            "ollama": {"model": "qwen3-coder:480b-cloud"},
+            "gemini_cli": {"model": "gemini-3.5-flash"},
+        }
+        self.assertEqual(
+            transcribe_meeting.resolve_llm_model_variants(
+                "ollama", config, ["gpt-oss:120b-cloud", "gpt-oss:20b-cloud"]
+            ),
+            ["gpt-oss:120b-cloud", "gpt-oss:20b-cloud"],
+        )
+
+    def test_resolve_llm_model_variants_uses_gemini_config(self):
+        config = {
+            "ollama": {"model": "mistral-nemo"},
+            "gemini_cli": {"model": "gemini-3.5-flash"},
+        }
+        self.assertEqual(
+            transcribe_meeting.resolve_llm_model_variants("gemini_cli", config, []),
+            ["gemini-3.5-flash"],
+        )
+
     def test_save_transcript_output_creates_accessible_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             notes_dir = Path(tmp) / "notes"

@@ -186,6 +186,13 @@ def make_safe_suffix(value: str) -> str:
     return re.sub(r'[^A-Za-z0-9._-]+', '_', value)
 
 
+def resolve_llm_model_variants(llm_provider: str, config: dict, compare_ollama_models: list[str]) -> list[str]:
+    """Возвращает список моделей для этапа llm."""
+    if llm_provider == 'ollama':
+        return compare_ollama_models or [config['ollama']['model']]
+    return [config['gemini_cli']['model']]
+
+
 def run_command(cmd, description, logger):
     """Запуск внешней команды с логированием."""
     logger.debug(f"Выполняется: {' '.join(cmd)}")
@@ -513,10 +520,8 @@ def main():
             else:
                 if llm_provider == 'gemini_cli' and compare_ollama_models:
                     raise SystemExit("--compare-ollama-model поддерживается только для llm_provider=ollama")
-                model_variants = (
-                    compare_ollama_models
-                    if llm_provider == 'ollama'
-                    else [config['gemini_cli']['model']]
+                model_variants = resolve_llm_model_variants(
+                    llm_provider, config, compare_ollama_models
                 )
                 for idx, model in enumerate(model_variants, start=1):
                     logger.info(f"LLM вариант {idx}/{len(model_variants)} ({llm_provider}): {model}")
