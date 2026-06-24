@@ -11,7 +11,7 @@ whisper_args:
   no_timestamps: true
 
 # Выбор LLM-провайдера пост-обработки: ollama | gemini_cli
-llm_provider: "ollama"
+llm_provider: "gemini_cli"
 
 # Ollama настройки
 ollama:
